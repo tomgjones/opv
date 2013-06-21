@@ -1,0 +1,36 @@
+=head1 NAME
+
+opv - OpenPGP verification of content against keyring
+
+=head1 SYNOPSIS
+
+    opv KEYRING FILE [SIGFILE]
+
+=head1 DESCRIPTION
+
+Checks that SIGFILE contains a valid signature of the content of FILE
+by one of the public keys in KEYRING.  Success is indicated by
+an exit code of zero.
+
+The public keys in KEYRING should be in ascii-armored OpenPGP format.
+
+If SIGFILE isn't given, the file with the signature is taken to
+be FILE.asc, as is conventional for detached ascii-armored signature
+files.
+
+If the signature doesn't verify, opv prints an error
+message to standard error and exit with a non-zero code (more details
+below).
+
+=head2 EXIT STATUS
+
+0: verification was successful
+
+113: verification failed despite valid input data
+
+123: invalid input data eg non-existent files specified or key files
+in wrong format.
+
+209: child process was signalled
+
+=cut

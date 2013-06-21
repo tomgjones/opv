@@ -1,0 +1,40 @@
+
+=head1 NAME
+
+opv.git - OpenPGP verification of per-commit signatures against keyring
+
+=head1 SYNOPSIS
+
+    opv.git KEYRING [COMMIT_ID]
+
+=head1 DESCRIPTION
+
+Checks that every git commit in the current repository from COMMIT_ID
+to HEAD is signed by
+one of the public keys in KEYRING.  Success is indicated by
+an exit code of zero.
+
+The public keys in KEYRING should be in ascii-armored OpenPGP format.
+
+If COMMIT_ID is not given, signatures must verify all the way back
+to respository root(s).
+
+If the signature doesn't verify, opv.git prints an error
+message to standard error and exits with a non-zero code (more details
+below).
+
+=head2 EXIT STATUS
+
+0: verification was successful
+
+113: verification failed despite valid input data
+
+123: invalid input data eg non-existent files specified or key files
+in wrong format.
+
+209: child process was signalled
+
+215: git error
+
+=cut
+
