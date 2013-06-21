@@ -1,0 +1,115 @@
+#!/usr/bin/perl
+
+=head1 NAME
+
+opv - OpenPGP verification of content against keyring
+
+=head1 SYNOPSIS
+
+    opv KEYRING FILE [SIGFILE]
+
+=head1 DESCRIPTION
+
+Checks that SIGFILE contains a valid signature of the content of FILE
+by one of the public keys in KEYRING.  Success is indicated by
+an exit code of zero.
+
+The public keys in KEYRING should be in ascii-armored OpenPGP format.
+
+If SIGFILE isn't given, the file with the signature is taken to
+be FILE.asc, as is conventional for detached ascii-armored signature
+files.
+
+If the signature doesn't verify, opv prints an error
+message to standard error and exit with a non-zero code (more details
+below).
+
+=head2 EXIT STATUS
+
+0: verification was successful
+
+113: verification failed despite valid input data
+
+123: invalid input data eg non-existent files specified or key files
+in wrong format.
+
+209: child process was signalled
+
+=cut
+
+use strict;
+use warnings;
+
+use File::Temp;
+use Getopt::Long qw(:config bundling no_ignore_case require_order);
+use Pod::Usage;
+use POSIX qw(SIGINT WIFSIGNALED WTERMSIG WIFEXITED WEXITSTATUS);
+
+my $show_error = 0;
+
+GetOptions('e' => \$show_error) or pod2usage(-exitval => 64, -verbose => 0);
+
+my ($KEYRING, $INFILE, $SIGFILE) = @ARGV;
+
+defined($KEYRING)
+    or pod2usage(-message => "KEYRING missing", -exitval => 64, -verbose => 0);
+defined($INFILE)
+    or pod2usage(-message => "INFILE missing", -exitval => 64, -verbose => 0);
+
+defined($SIGFILE) or $SIGFILE = "$INFILE.asc";
+
+my $gpgkeyring = File::Temp->new;
+#my $trustdb = File::Temp->new;
+my $gpghome = File::Temp->newdir;
+
+#my @gpgall = (qw(gpg --no-default-keyring --keyring), $gpgkeyring,
+#    "--trustdb", $trustdb);
+# gpg: How many times do you need to be told not to store state in my
+# home directory?
+
+my @gpgall = (qw(gpg --homedir), $gpghome, "--quiet");
+
+system(@gpgall, "--import", $KEYRING) and die "opv: gpg import error\n";
+
+# Since we've had to shut gpg up by diverting its standard error, we can't
+# rely on it for reporting being unable to open input files to the
+# user.  Trying to open it for reading here will catch most errors
+# and produce a helpful error message rather than presenting the user
+# with a mysterious generic error later.
+for my $file ($KEYRING, $INFILE, $SIGFILE) {
+    if (! open(my $f, "<", $file)) {
+        warn "open: $!: $file\n";
+        exit(123);
+    }
+}
+
+if (my $child = fork) {
+    waitpid($child, 0);
+
+    if( WIFSIGNALED( $? ) ) {
+        warn "child $child died with signal " . WTERMSIG( $? ) . "\n";
+        exit(113);
+    }
+    elsif( WIFEXITED( $? ) and WEXITSTATUS( $? ) != 0 ) {
+        warn "verification failed\n";
+        exit(209);
+    }
+    exit(0);
+}
+else {
+    # gpg likes to make a lot of noise so we ignore it.  Exit status
+    # be enough for us. Unless user gives -e.  The quiet option doesn't
+    # make it spectacularly quiet.
+    unless ($show_error) {
+        open(STDERR, ">", "/dev/null") or die;
+    }
+
+    # From gpg(1):
+    #
+    #     With more than 1 argu‐
+    #     ment, the first should be a detached signature and the remaining
+    #     files are the signed stuff.
+
+    exec(@gpgall, qw(--yes --always-trust --verify), $SIGFILE, $INFILE)
+        or die $!;
+}

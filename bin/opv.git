@@ -1,0 +1,111 @@
+#!/usr/bin/perl
+
+=head1 NAME
+
+opv.git - OpenPGP verification of per-commit signatures against keyring
+
+=head1 SYNOPSIS
+
+    opv.git KEYRING [COMMIT_ID]
+
+=head1 DESCRIPTION
+
+Checks that every git commit in the current repository from COMMIT_ID
+to HEAD is signed by
+one of the public keys in KEYRING.  Success is indicated by
+an exit code of zero.
+
+The public keys in KEYRING should be in ascii-armored OpenPGP format.
+
+If COMMIT_ID is not given, signatures must verify all the way back
+to respository root(s).
+
+If the signature doesn't verify, opv.git prints an error
+message to standard error and exits with a non-zero code (more details
+below).
+
+=head2 EXIT STATUS
+
+0: verification was successful
+
+113: verification failed despite valid input data
+
+123: invalid input data eg non-existent files specified or key files
+in wrong format.
+
+209: child process was signalled
+
+215: git error
+
+=cut
+
+use strict;
+use warnings;
+
+use File::Temp;
+use Getopt::Long qw(:config bundling no_ignore_case require_order);
+use Pod::Usage;
+use POSIX qw(SIGINT WIFSIGNALED WTERMSIG WIFEXITED WEXITSTATUS);
+
+my $show_error = 0;
+
+GetOptions('e' => \$show_error) or pod2usage(-exitval => 64, -verbose => 0);
+
+my ($KEYRING, $COMMIT_ID) = @ARGV;
+
+defined($KEYRING)
+    or pod2usage(-message => "KEYRING missing", -exitval => 64, -verbose => 0);
+
+my $gpgkeyring = File::Temp->new;
+#my $trustdb = File::Temp->new;
+my $gpghome = File::Temp->newdir;
+
+#my @gpgall = (qw(gpg --no-default-keyring --keyring), $gpgkeyring,
+#    "--trustdb", $trustdb);
+# gpg: How many times do you need to be told not to store state in my
+# home directory?
+
+my @gpgall = (qw(gpg --homedir), $gpghome, "--quiet");
+
+system(@gpgall, "--import", $KEYRING) and die "opv: gpg import error\n";
+
+# Since we've had to shut gpg up by diverting its standard error, we can't
+# rely on it for reporting being unable to open input files to the
+# user.  Trying to open it for reading here will catch most errors
+# and produce a helpful error message rather than presenting the user
+# with a mysterious generic error later.
+for my $file ($KEYRING) {
+    if (! open(my $f, "<", $file)) {
+        warn "open: $!: $file\n";
+        exit(123);
+    }
+}
+
+# Yuck - could break programs further down the "calling stack" but
+# probably won't.
+$ENV{GNUPGHOME} = $gpghome;
+
+my $rev = defined($COMMIT_ID) ? "${COMMIT_ID}.." : "HEAD";
+
+my @gitlog = (qw(git log), "--pretty=format:\%H\t\%aN\t\%s\t\%G?", $rev);
+open(my $gitlog, "-|", @gitlog) or die "$!: git\n";
+while (<$gitlog>) {
+    /\tG$/ or do {
+        # err why does it not end in newline?
+        /\n$/s or $_ .= "\n";
+        warn "couldn't verify commit: $_";
+        exit 113;
+    };
+}
+
+close $gitlog;
+
+if( WIFSIGNALED( $? ) ) {
+    warn "git died with signal " . WTERMSIG( $? ) . "\n";
+    exit(209);
+}
+elsif( WIFEXITED( $? ) and WEXITSTATUS( $? ) != 0 ) {
+    warn "git error\n";
+    exit(215);
+}
+exit(0);
