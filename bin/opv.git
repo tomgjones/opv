@@ -48,6 +48,9 @@ for my $file ($KEYRING) {
 # probably won't.
 $ENV{GNUPGHOME} = $gpghome;
 
+# With big thanks to Mike Gerwitz and his excellent article at
+# <http://mikegerwitz.com/papers/git-horror-story.html>.
+
 my $rev = defined($COMMIT_ID) ? "${COMMIT_ID}.." : "HEAD";
 
 my @gitlog = (qw(git log), "--pretty=format:\%H\t\%aN\t\%s\t\%G?", $rev);
@@ -62,6 +65,8 @@ while (<$gitlog>) {
 }
 
 close $gitlog;
+
+# end section crediting Mike Gerwitz
 
 if( WIFSIGNALED( $? ) ) {
     warn "git died with signal " . WTERMSIG( $? ) . "\n";
