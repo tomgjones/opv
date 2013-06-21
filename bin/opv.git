@@ -1,0 +1,79 @@
+#!/usr/bin/perl
+
+# Implements opv.git(1), defined elsewhere (see doc).
+
+use strict;
+use warnings;
+
+use File::Temp;
+use Getopt::Long qw(:config bundling no_ignore_case require_order);
+use Pod::Usage;
+use POSIX qw(SIGINT WIFSIGNALED WTERMSIG WIFEXITED WEXITSTATUS);
+
+my $show_error = 0;
+
+GetOptions('e' => \$show_error) or pod2usage(-exitval => 64, -verbose => 0);
+
+my ($KEYRING, $COMMIT_ID) = @ARGV;
+
+defined($KEYRING)
+    or pod2usage(-message => "KEYRING missing", -exitval => 64, -verbose => 0);
+
+my $gpgkeyring = File::Temp->new;
+#my $trustdb = File::Temp->new;
+my $gpghome = File::Temp->newdir;
+
+#my @gpgall = (qw(gpg --no-default-keyring --keyring), $gpgkeyring,
+#    "--trustdb", $trustdb);
+# gpg: How many times do you need to be told not to store state in my
+# home directory?
+
+my @gpgall = (qw(gpg --homedir), $gpghome, "--quiet");
+
+system(@gpgall, "--import", $KEYRING) and die "opv: gpg import error\n";
+
+# Since we've had to shut gpg up by diverting its standard error, we can't
+# rely on it for reporting being unable to open input files to the
+# user.  Trying to open it for reading here will catch most errors
+# and produce a helpful error message rather than presenting the user
+# with a mysterious generic error later.
+for my $file ($KEYRING) {
+    if (! open(my $f, "<", $file)) {
+        warn "open: $!: $file\n";
+        exit(123);
+    }
+}
+
+# Yuck - could break programs further down the "calling stack" but
+# probably won't.
+$ENV{GNUPGHOME} = $gpghome;
+
+# With big thanks to Mike Gerwitz and his excellent article at
+# <http://mikegerwitz.com/papers/git-horror-story.html>.
+
+my $rev = defined($COMMIT_ID) ? "${COMMIT_ID}.." : "HEAD";
+
+my @gitlog = (qw(git log), "--pretty=format:\%H\t\%aN\t\%s\t\%G?", $rev);
+open(my $gitlog, "-|", @gitlog) or die "$!: git\n";
+while (<$gitlog>) {
+    /\tG$/ or do {
+        # err why does it not end in newline?
+        /\n$/s or $_ .= "\n";
+        warn "couldn't verify commit: $_";
+        exit 113;
+    };
+}
+
+close $gitlog;
+
+# end section crediting Mike Gerwitz
+
+if( WIFSIGNALED( $? ) ) {
+    warn "git died with signal " . WTERMSIG( $? ) . "\n";
+    exit(209);
+}
+elsif( WIFEXITED( $? ) and WEXITSTATUS( $? ) != 0 ) {
+    warn "git error\n";
+    exit(215);
+}
+exit(0);
