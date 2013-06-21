@@ -1,0 +1,16 @@
+Source: opv
+Section: perl
+Priority: optional
+Maintainer: Tom Jones <tom.jones@bccx.com>
+Build-Depends: debhelper (>= 8)
+Build-Depends-Indep: perl,
+ perl-modules
+Standards-Version: 3.9.2
+Homepage: http://search.cpan.org/dist/opv/
+
+Package: opv
+Architecture: all
+Depends: ${misc:Depends}, ${perl:Depends}
+Description: OpenPGP verification of per-commit signatures against keyring
+ Checks that every git commit in the current repository from COMMIT_ID to HEAD
+ is signed by one of the public keys in KEYRING.
